@@ -2,6 +2,8 @@
 .worktrees/
 __pycache__/
 .pytest_cache/
+.pytest_tmp/
+*.egg-info/
 *.py[cod]
 .chrome_profile/
 screenshot*.png

@@ -14,6 +14,9 @@ test = [
     "pytest-asyncio>=0.24,<2",
 ]
 
+[tool.setuptools.packages.find]
+include = ["browser*", "tools*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
