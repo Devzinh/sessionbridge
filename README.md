@@ -1,116 +1,119 @@
 # SessionBridge
 
-SessionBridge é um servidor MCP local para automação assistida de uma janela visível do Chrome. Ele mantém uma sessão dedicada entre execuções, identifica estados que provavelmente exigem ação humana e permite continuar a automação depois dessa intervenção.
+Servidor MCP local para automação de navegador com intervenção humana e sessão persistente.
 
-## Arquitetura
+O SessionBridge conecta clientes compatíveis com MCP a uma janela visível do Chrome. Quando uma página exige login, CAPTCHA ou outra ação manual, a automação pausa, preserva a sessão e continua depois que o usuário conclui a etapa.
 
-- `server.py`: interface MCP via `stdio` e registro das seis ferramentas.
-- `tools/browser.py`: adaptadores MCP para a sessão compartilhada.
-- `browser/session.py`: coordenação de navegação, estado, conteúdo e desconexão.
-- `browser/launcher.py`: inicialização do navegador e perfil persistente.
-- `browser/cdp.py`: conexão Playwright pelo Chrome DevTools Protocol (CDP).
-- `browser/state.py`: classificação heurística da página.
+```text
+Codex / MCP Client
+        │
+        │ MCP (stdio)
+        ▼
+   SessionBridge
+        │
+        │ Playwright + CDP
+        ▼
+ Chrome dedicado ◄──── interação humana
+```
 
-O Playwright se conecta a uma instalação local do Chrome pelo CDP; não é necessário baixar um navegador com `playwright install`.
+## Recursos
 
-## Pré-requisitos no Windows
+- Sessão persistente em perfil dedicado do Chrome.
+- Conexão local via Chrome DevTools Protocol (CDP).
+- Detecção heurística de Cloudflare, Turnstile e CAPTCHA.
+- Espera automática pela conclusão da interação humana.
+- Retomada do workflow na mesma página e sessão.
+- Extração limitada de título, URL e texto visível.
+- Interface independente do modelo ou cliente de IA.
 
-- Python 3.11 a 3.13 (faixa recomendada).
-- Google Chrome instalado em um dos caminhos usuais do Windows.
+## Como funciona
 
-No PowerShell, a partir da raiz do projeto:
+1. Cliente MCP chama `open_browser` com uma URL.
+2. SessionBridge abre ou reutiliza Chrome dedicado.
+3. Página é classificada como pronta ou dependente de interação manual.
+4. Usuário resolve etapa diretamente na janela do navegador.
+5. `wait_for_human` detecta mudança; workflow pode continuar.
+6. `close_browser` desconecta automação sem encerrar Chrome.
+
+Cookies, abas e autenticação permanecem no perfil dedicado entre execuções.
+
+## Início rápido
+
+### Requisitos
+
+- Windows
+- Python 3.11 a 3.13
+- Google Chrome
+
+### Instalação
 
 ```powershell
+git clone https://github.com/Devzinh/sessionbridge.git
+cd sessionbridge
+
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[test]"
 ```
 
-Execute os testes automatizados, que usam doubles e não abrem o Chrome:
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-Execute o smoke test real (abre ou reutiliza o Chrome visível):
-
-```powershell
-.\.venv\Scripts\python.exe scripts\smoke_test.py
-```
-
-O smoke acessa `https://example.com`, exige uma página conectada e pronta, lê no máximo 500 caracteres e imprime somente um resumo seguro, sem cookies nem o texto da página.
-
-Em 2026-09-04, um smoke real neste ambiente retornou `connected: true`, `ready: true`, URL `https://example.com/` e `content_length: 128`. Esse resultado comprova esta execução local, não todos os ambientes.
-
-## Iniciar o servidor MCP
-
-Para iniciar diretamente pelo transporte `stdio`:
+### Executar servidor
 
 ```powershell
 .\.venv\Scripts\python.exe server.py
 ```
 
-O processo usa entrada e saída padrão para conversar com o cliente MCP; não é um servidor HTTP interativo.
+Servidor usa transporte MCP `stdio`; terminal permanece aguardando cliente MCP.
 
-## Configurar no Codex
+## Configuração no Codex
 
-Edite `%USERPROFILE%\.codex\config.toml` e use caminhos absolutos. Em strings TOML com aspas duplas, cada barra invertida precisa ser escapada:
+Adicione servidor ao arquivo `%USERPROFILE%\.codex\config.toml`:
 
 ```toml
 [mcp_servers.sessionbridge]
-command = "C:\\Users\\roni9\\Desktop\\Curso Da Sarah\\.venv\\Scripts\\python.exe"
-args = ["C:\\Users\\roni9\\Desktop\\Curso Da Sarah\\server.py"]
+command = "C:\\path\\to\\sessionbridge\\.venv\\Scripts\\python.exe"
+args = ["C:\\path\\to\\sessionbridge\\server.py"]
 ```
 
-Reinicie o Codex após salvar a configuração. Durante uma etapa manual, mantenha a janela dedicada do Chrome aberta.
+Substitua `C:\path\to\sessionbridge` pelo caminho real do clone e reinicie Codex.
 
-## Ferramentas
+Exemplo de solicitação:
 
-O servidor expõe somente estas seis ferramentas:
+> Abra o site, obtenha dados da página e aguarde caso seja necessária interação manual.
 
-- `open_browser(url)`: abre uma URL HTTP(S) absoluta e informa o estado inicial. Exemplo: `open_browser("https://example.com")`.
-- `get_browser_status()`: consulta URL, título e estado da página atual. Exemplo: `get_browser_status()`.
-- `wait_for_human(timeout_seconds)`: aguarda a conclusão de uma interação manual. Exemplo: `wait_for_human(120)`.
-- `continue_session()`: verifica uma vez se a automação já pode continuar. Exemplo: `continue_session()`.
-- `get_current_page(max_length)`: retorna URL, título e texto legível limitado. Exemplo: `get_current_page(2000)`.
-- `close_browser()`: desconecta a automação. Exemplo: `close_browser()`.
+## Ferramentas MCP
 
-## Fluxo com intervenção humana
+| Ferramenta | Função |
+| --- | --- |
+| `open_browser(url)` | Abre URL HTTP(S) e retorna estado inicial. |
+| `get_browser_status()` | Consulta conexão, página e necessidade de interação. |
+| `wait_for_human(timeout_seconds)` | Aguarda página ficar pronta ou atingir timeout. |
+| `continue_session()` | Verifica imediatamente se sessão pode continuar. |
+| `get_current_page(max_length)` | Retorna título, URL e texto limitado da página. |
+| `close_browser()` | Desconecta Playwright sem fechar Chrome. |
 
-1. Chame `open_browser` com uma URL válida.
-2. Se `manual_interaction_required` for `true`, resolva CAPTCHA, login ou confirmação diretamente na janela visível.
-3. Use `wait_for_human` para aguardar ou `continue_session` para verificar uma vez.
-4. Quando `connected` e `ready` forem `true`, use `get_current_page` conforme necessário.
-5. Ao terminar, chame `close_browser`.
+## Testes
+
+Suíte automatizada não abre navegador:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Smoke test abre Chrome e acessa `https://example.com`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\smoke_test.py
+```
 
 ## Segurança e limitações
 
-- O navegador usa o perfil dedicado `.chrome_profile`; não use esse diretório como seu perfil principal.
-- O CDP é exposto somente em `127.0.0.1`, na porta padrão `9222`. Ainda assim, qualquer processo local com acesso à porta pode controlar essa sessão.
+- CDP escuta somente em `127.0.0.1:9222`.
+- Navegador usa perfil isolado em `.chrome_profile`.
+- Endpoint CDP desconhecido é recusado para evitar acesso ao perfil errado.
 - SessionBridge não resolve nem contorna CAPTCHA ou mecanismos anti-bot.
-- A detecção de desafios é heurística. Um login desconhecido ou prompt específico do site pode exigir avaliação do chamador, inclusive pelo resultado limitado de `get_current_page`.
-- `get_current_page` devolve texto da página ao cliente MCP; solicite apenas o tamanho necessário e evite páginas com dados sensíveis.
-- `close_browser` desconecta o Playwright, mas não fecha o Chrome. Abas, cookies e login permanecem no perfil dedicado.
-- O MVP controla uma sessão por processo e não oferece cliques, preenchimento de campos, screenshots nem execução arbitrária de JavaScript como ferramentas MCP.
+- Detecção de interação manual é heurística e pode não reconhecer prompts específicos.
+- `get_current_page` envia texto da página ao cliente MCP; evite conteúdo sensível.
+- MVP não oferece clique, preenchimento, screenshot ou JavaScript arbitrário como ferramentas.
 
-## Solução de problemas
+## Status
 
-**A porta 9222 já está em uso:** feche o processo que ocupa a porta ou confirme que ele é a instância dedicada do Chrome iniciada pelo SessionBridge. Não conecte o projeto a um navegador desconhecido.
-
-**Chrome não foi encontrado:** instale o Google Chrome em um caminho padrão do Windows. O launcher também reconhece alguns caminhos padrão do Brave e Edge, mas Chrome é o navegador recomendado.
-
-**Chrome encerra ao iniciar ou o perfil está bloqueado:** feche outras instâncias que estejam usando `.chrome_profile` e execute novamente. Não abra o mesmo diretório de perfil com dois processos independentes.
-
-**A conexão CDP falha:** confirme que `http://127.0.0.1:9222/json/version` responde na máquina local e que firewall ou política corporativa não bloqueiam a porta loopback.
-
-## Publicação básica no GitHub
-
-Antes de publicar, revise arquivos locais e dados do perfil. O `.gitignore` já exclui `.venv`, caches, screenshots e `.chrome_profile`. Em seguida, crie um repositório no GitHub, inicialize o Git localmente, adicione os arquivos do projeto, faça o primeiro commit e configure o remoto. Este projeto não declara licença nem pipeline de CI; adicione-os somente após escolher conscientemente as políticas adequadas.
-
-```powershell
-git init
-git add .
-git commit -m "Initial SessionBridge MVP"
-git branch -M main
-git remote add origin <URL_DO_REPOSITORIO>
-git push -u origin main
-```
+MVP funcional para Windows, com integração MCP via `stdio`, sessão persistente e handoff humano pelo Chrome.

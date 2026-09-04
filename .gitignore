@@ -5,3 +5,4 @@ __pycache__/
 *.py[cod]
 .chrome_profile/
 screenshot*.png
+.serena/
