@@ -92,7 +92,38 @@ args = ["C:\\path\\to\\sessionbridge\\server.py"]
 
 Substitua caminho pelo clone local e reinicie Codex.
 
-> Abra site, leia dados da página e aguarde se houver interação manual.
+## Prompts de exemplo
+
+### Abrir e resumir página
+
+```text
+Abra https://www.globo.com, leia o conteúdo visível e faça um resumo curto.
+```
+
+### Aguardar verificação manual
+
+```text
+Abra https://seleniumbase.io/apps/turnstile. Se houver verificação manual,
+avise-me e aguarde até eu concluir. Depois confirme se a página está pronta.
+```
+
+### Retomar mesma sessão
+
+```text
+Continue a sessão atual e leia título, URL e conteúdo visível da página.
+```
+
+### Consultar estado
+
+```text
+Verifique o estado do navegador e informe se existe interação manual pendente.
+```
+
+### Desconectar automação
+
+```text
+Desconecte SessionBridge sem fechar a janela do navegador.
+```
 
 ## Ferramentas MCP
 
