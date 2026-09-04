@@ -1,49 +1,66 @@
+![SessionBridge — Human-in-the-loop browser sessions over MCP](assets/sessionbridge-banner.png)
+
+<div align="center">
+
 # SessionBridge
 
-Servidor MCP local para automação de navegador com intervenção humana e sessão persistente.
+Sessões visíveis e persistentes de navegador para clientes MCP, com intervenção humana quando necessário.
 
-O SessionBridge conecta clientes compatíveis com MCP a uma janela visível do Chrome. Quando uma página exige login, CAPTCHA ou outra ação manual, a automação pausa, preserva a sessão e continua depois que o usuário conclui a etapa.
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-stdio-111111)
+![Playwright](https://img.shields.io/badge/Playwright-CDP-2EAD33?logo=playwright&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-0078D4?logo=windows&logoColor=white)
 
-```text
-Codex / MCP Client
-        │
-        │ MCP (stdio)
-        ▼
-   SessionBridge
-        │
-        │ Playwright + CDP
-        ▼
- Chrome dedicado ◄──── interação humana
-```
+</div>
 
-## Recursos
+---
 
-- Sessão persistente em perfil dedicado do Chrome.
-- Conexão local via Chrome DevTools Protocol (CDP).
-- Detecção heurística de Cloudflare, Turnstile e CAPTCHA.
-- Espera automática pela conclusão da interação humana.
-- Retomada do workflow na mesma página e sessão.
-- Extração limitada de título, URL e texto visível.
-- Interface independente do modelo ou cliente de IA.
+## O problema que resolve
+
+Automações de navegador normalmente param quando encontram login, CAPTCHA, Cloudflare ou outra etapa que precisa de uma pessoa. SessionBridge mantém janela dedicada do Chrome aberta e mesma sessão ativa: cliente MCP navega, pessoa conclui etapa manual e workflow continua no mesmo contexto.
+
+SessionBridge não resolve nem contorna proteções anti-bot. Ele oferece handoff controlado para interação humana.
 
 ## Como funciona
 
-1. Cliente MCP chama `open_browser` com uma URL.
-2. SessionBridge abre ou reutiliza Chrome dedicado.
-3. Página é classificada como pronta ou dependente de interação manual.
-4. Usuário resolve etapa diretamente na janela do navegador.
-5. `wait_for_human` detecta mudança; workflow pode continuar.
-6. `close_browser` desconecta automação sem encerrar Chrome.
+```text
+┌──────────────────┐      MCP / stdio      ┌──────────────────┐
+│ Cliente MCP / IA │ ────────────────────► │  SessionBridge   │
+└──────────────────┘                       └────────┬─────────┘
+                                                  │ Playwright + CDP
+                                                  ▼
+                                         ┌──────────────────┐
+                                         │ Chrome dedicado  │◄──── Pessoa
+                                         │ sessão persistente│
+                                         └──────────────────┘
+```
 
-Cookies, abas e autenticação permanecem no perfil dedicado entre execuções.
+1. Cliente chama `open_browser` com URL HTTP(S).
+2. SessionBridge abre ou reutiliza navegador dedicado.
+3. Inspeção heurística classifica página como pronta ou dependente de interação manual.
+4. Pessoa conclui etapa diretamente na janela visível.
+5. `wait_for_human` ou `continue_session` verifica página novamente.
+6. Cliente retoma workflow usando mesmas abas, cookies e autenticação.
+
+Detalhes: [docs/architecture.md](docs/architecture.md).
+
+## Recursos
+
+- perfil persistente e isolado em `.chrome_profile`;
+- conexão CDP restrita a `127.0.0.1:9222`;
+- validação da identidade do endpoint antes de reutilizá-lo;
+- detecção heurística de Cloudflare, Turnstile, CAPTCHA e textos de verificação;
+- espera com timeout para conclusão de interação humana;
+- leitura limitada de URL, título e texto visível;
+- transporte MCP local via `stdio`.
 
 ## Início rápido
 
 ### Requisitos
 
-- Windows
-- Python 3.11 a 3.13
-- Google Chrome
+- Windows;
+- Python 3.11 a 3.13;
+- Google Chrome, Microsoft Edge ou Brave.
 
 ### Instalação
 
@@ -61,11 +78,11 @@ python -m venv .venv
 .\.venv\Scripts\python.exe server.py
 ```
 
-Servidor usa transporte MCP `stdio`; terminal permanece aguardando cliente MCP.
+Servidor usa MCP `stdio`; terminal permanece aguardando cliente.
 
 ## Configuração no Codex
 
-Adicione servidor ao arquivo `%USERPROFILE%\.codex\config.toml`:
+Adicione ao `%USERPROFILE%\.codex\config.toml`:
 
 ```toml
 [mcp_servers.sessionbridge]
@@ -73,47 +90,66 @@ command = "C:\\path\\to\\sessionbridge\\.venv\\Scripts\\python.exe"
 args = ["C:\\path\\to\\sessionbridge\\server.py"]
 ```
 
-Substitua `C:\path\to\sessionbridge` pelo caminho real do clone e reinicie Codex.
+Substitua caminho pelo clone local e reinicie Codex.
 
-Exemplo de solicitação:
-
-> Abra o site, obtenha dados da página e aguarde caso seja necessária interação manual.
+> Abra site, leia dados da página e aguarde se houver interação manual.
 
 ## Ferramentas MCP
 
 | Ferramenta | Função |
 | --- | --- |
-| `open_browser(url)` | Abre URL HTTP(S) e retorna estado inicial. |
-| `get_browser_status()` | Consulta conexão, página e necessidade de interação. |
+| `open_browser(url)` | Valida URL, abre página e retorna estado inicial. |
+| `get_browser_status()` | Retorna conexão, URL, título e necessidade de interação. |
 | `wait_for_human(timeout_seconds)` | Aguarda página ficar pronta ou atingir timeout. |
-| `continue_session()` | Verifica imediatamente se sessão pode continuar. |
-| `get_current_page(max_length)` | Retorna título, URL e texto limitado da página. |
-| `close_browser()` | Desconecta Playwright sem fechar Chrome. |
+| `continue_session()` | Reavalia imediatamente estado da página. |
+| `get_current_page(max_length)` | Retorna URL, título e texto, limitado entre 1 e 100.000 caracteres. |
+| `close_browser()` | Desconecta Playwright sem encerrar Chrome. |
 
 ## Testes
 
-Suíte automatizada não abre navegador:
+Suíte automatizada usa objetos simulados e não abre navegador:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Smoke test abre Chrome e acessa `https://example.com`:
+Smoke test abre navegador instalado e acessa `https://example.com`:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\smoke_test.py
 ```
 
-## Segurança e limitações
+## Segurança
 
-- CDP escuta somente em `127.0.0.1:9222`.
-- Navegador usa perfil isolado em `.chrome_profile`.
-- Endpoint CDP desconhecido é recusado para evitar acesso ao perfil errado.
-- SessionBridge não resolve nem contorna CAPTCHA ou mecanismos anti-bot.
-- Detecção de interação manual é heurística e pode não reconhecer prompts específicos.
-- `get_current_page` envia texto da página ao cliente MCP; evite conteúdo sensível.
-- MVP não oferece clique, preenchimento, screenshot ou JavaScript arbitrário como ferramentas.
+- Endpoint CDP escuta somente em loopback.
+- Perfil dedicado reduz mistura com sessão principal do navegador.
+- Endpoint desconhecido na porta configurada é recusado.
+- URLs precisam ser HTTP(S) absolutas, sem credenciais embutidas.
+- Texto lido da página é devolvido ao cliente MCP; avalie fluxo antes de usar páginas sensíveis.
+
+## Limitações atuais
+
+- execução e descoberta de navegador focadas em Windows;
+- detecção heurística pode gerar falso positivo ou não reconhecer prompt específico;
+- sem clique, preenchimento, screenshot ou JavaScript arbitrário como ferramentas MCP;
+- porta CDP fixa em `9222` no fluxo padrão;
+- perfil dedicado preserva dados localmente entre execuções.
+
+Problema comum? Consulte [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## Estrutura
+
+```text
+sessionbridge/
+├── browser/        # lançamento, CDP, estado e sessão
+├── tools/          # adaptadores das ferramentas MCP
+├── scripts/        # smoke test com navegador real
+├── tests/          # testes automatizados
+├── docs/           # arquitetura e solução de problemas
+├── server.py       # servidor FastMCP via stdio
+└── pyproject.toml  # pacote e dependências
+```
 
 ## Status
 
-MVP funcional para Windows, com integração MCP via `stdio`, sessão persistente e handoff humano pelo Chrome.
+MVP funcional: servidor MCP via `stdio`, navegador dedicado, sessão persistente e handoff humano. Escopo atual prioriza navegação, inspeção de estado e leitura limitada de conteúdo.
