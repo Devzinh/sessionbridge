@@ -31,7 +31,7 @@ SessionBridge não resolve nem contorna proteções anti-bot. Ele oferece handof
                                                   ▼
                                          ┌──────────────────┐
                                          │ Chrome dedicado  │◄──── Pessoa
-                                         │ sessão persistente│
+                                         │sessão persistente│
                                          └──────────────────┘
 ```
 
